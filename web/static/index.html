@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecurePrompt</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fafbfc;color:#1c2127;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem}
+.logo{max-width:520px;width:100%;margin-bottom:1.5rem;display:block}
+h1{font-size:1.8rem;margin-bottom:.4rem;color:#0f1419;font-weight:600;letter-spacing:-.02em}
+.sub{color:#5c6975;font-size:.9rem;margin-bottom:2rem;font-weight:400}
+.card{background:#ffffff;border:1px solid #e4e8ed;border-radius:12px;padding:1.75rem;width:100%;max-width:680px;margin-bottom:1rem;box-shadow:0 2px 8px rgba(0,0,0,0.04)}
+textarea{width:100%;background:#fafbfc;color:#1c2127;border:1px solid #d1d7e0;border-radius:8px;padding:.9rem;font-size:.95rem;resize:vertical;min-height:90px;font-family:inherit;transition:all .2s}
+textarea:focus{outline:none;border-color:#5b8ff9;background:#ffffff;box-shadow:0 0 0 3px rgba(91,143,249,0.08)}
+.row{display:flex;gap:.6rem;margin-top:.85rem;align-items:center}
+select{background:#ffffff;color:#1c2127;border:1px solid #d1d7e0;border-radius:8px;padding:.55rem .85rem;font-size:.9rem;cursor:pointer;transition:border-color .2s}
+select:hover{border-color:#a8b3c0}
+button{background:#1c2127;color:#fff;border:none;border-radius:8px;padding:.6rem 1.4rem;font-size:.95rem;font-weight:500;cursor:pointer;transition:all .2s}
+button:hover{background:#0f1419;transform:translateY(-1px)}
+button:disabled{opacity:.6;cursor:not-allowed;transform:translateY(0)}
+.badge{display:inline-block;padding:.35rem .9rem;border-radius:6px;font-weight:600;font-size:.88rem;margin-bottom:.6rem;letter-spacing:.01em}
+.badge-SAFE{background:#ecfdf5;color:#059669;border:1px solid #d1fae5}
+.badge-REVIEW{background:#fef3c7;color:#d97706;border:1px solid #fde68a}
+.badge-BLOCK{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.meta{color:#6b7280;font-size:.8rem;margin-top:.5rem}
+.finding{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:.65rem .85rem;margin-top:.5rem;font-size:.87rem;line-height:1.5}
+.finding .tag{font-weight:600;margin-right:.4rem;color:#2563eb}
+.rewrite{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem .95rem;margin-top:.6rem;font-size:.87rem;color:#166534;font-family:'Courier New',monospace;word-break:break-word;line-height:1.5}
+</style>
+</head>
+<body>
+<img src="secureprompt-logo-banner.png" alt="SecurePrompt" class="logo">
+<p class="sub">Pre-flight security scanner for AI prompts</p>
+<div class="card">
+  <textarea id="prompt" placeholder="Type or paste a prompt to scan...">My API key is sk-abc123xyz456.</textarea>
+  <div class="row">
+    <select id="policy"><option value="strict">Strict</option><option value="moderate">Moderate</option><option value="permissive">Permissive</option></select>
+    <button id="btn" onclick="scan()">Scan</button>
+    <span id="time" class="meta"></span>
+  </div>
+</div>
+<div class="card" id="result" style="display:none"><div id="out"></div></div>
+<script>
+async function scan(){
+  const btn=document.getElementById('btn'),prompt=document.getElementById('prompt').value;
+  if(!prompt.trim())return;
+  btn.disabled=true;btn.textContent='Scanning…';
+  try{
+    const r=await fetch('/v1/prescan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:prompt,policy_profile:document.getElementById('policy').value})});
+    const d=await r.json(),res=document.getElementById('result');res.style.display='block';
+    let h='<span class="badge badge-'+d.risk_level+'">'+d.risk_level+'</span> <span class="meta">Score: '+d.risk_score+'/100</span>';
+    if(d.findings)d.findings.forEach(f=>{h+='<div class="finding"><span class="tag">'+f.category+'</span> '+f.detail+' <span class="meta">('+f.severity+', '+Math.round(f.confidence*100)+'%)</span></div>'});
+    if(d.safe_rewrite&&d.risk_level!=='SAFE')h+='<div class="rewrite">'+d.safe_rewrite+'</div>';
+    h+='<div class="meta" style="margin-top:.5rem">'+d.event_id+' · '+d.processing_time_ms+'ms · '+d.policy_profile+' · sig:'+(d.decision_signature||'').slice(0,12)+'…</div>';
+    document.getElementById('out').innerHTML=h;
+    document.getElementById('time').textContent=d.processing_time_ms+'ms';
+  }catch(e){document.getElementById('result').style.display='block';document.getElementById('out').innerHTML='<span style="color:#dc2626;font-weight:500">Error: '+e.message+'</span>'}
+  btn.disabled=false;btn.textContent='Scan';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SecurePrompt API",
+    "description": "Pre-flight security scanning for AI prompts",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "YOUR_NGROK_URL_HERE",
+      "description": "SecurePrompt Server"
+    }
+  ],
+  "paths": {
+    "/v1/prescan": {
+      "post": {
+        "operationId": "prescan",
+        "summary": "Scan a prompt for security issues",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["content"],
+                "properties": {
+                  "event_id": { "type": "string" },
+                  "content": { "type": "string", "description": "The prompt to scan" },
+                  "policy_profile": { "type": "string", "enum": ["strict", "moderate", "permissive"], "default": "strict" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scan result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "event_id": { "type": "string" },
+                    "risk_level": { "type": "string", "enum": ["SAFE", "REVIEW", "BLOCK"] },
+                    "risk_score": { "type": "integer" },
+                    "findings": { "type": "array" },
+                    "safe_rewrite": { "type": "string" },
+                    "decision_signature": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
