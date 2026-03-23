@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "YOUR_NGROK_URL_HERE",
+      "url": "https://aetiological-dominic-ideomotor.ngrok-free.dev",
       "description": "SecurePrompt Server"
     }
   ],
@@ -22,11 +22,26 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["content"],
+                "required": [
+                  "content"
+                ],
                 "properties": {
-                  "event_id": { "type": "string" },
-                  "content": { "type": "string", "description": "The prompt to scan" },
-                  "policy_profile": { "type": "string", "enum": ["strict", "moderate", "permissive"], "default": "strict" }
+                  "event_id": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "The prompt to scan"
+                  },
+                  "policy_profile": {
+                    "type": "string",
+                    "enum": [
+                      "strict",
+                      "moderate",
+                      "permissive"
+                    ],
+                    "default": "strict"
+                  }
                 }
               }
             }
@@ -40,12 +55,29 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "event_id": { "type": "string" },
-                    "risk_level": { "type": "string", "enum": ["SAFE", "REVIEW", "BLOCK"] },
-                    "risk_score": { "type": "integer" },
-                    "findings": { "type": "array" },
-                    "safe_rewrite": { "type": "string" },
-                    "decision_signature": { "type": "string" }
+                    "event_id": {
+                      "type": "string"
+                    },
+                    "risk_level": {
+                      "type": "string",
+                      "enum": [
+                        "SAFE",
+                        "REVIEW",
+                        "BLOCK"
+                      ]
+                    },
+                    "risk_score": {
+                      "type": "integer"
+                    },
+                    "findings": {
+                      "type": "array"
+                    },
+                    "safe_rewrite": {
+                      "type": "string"
+                    },
+                    "decision_signature": {
+                      "type": "string"
+                    }
                   }
                 }
               }

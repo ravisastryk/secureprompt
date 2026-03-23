@@ -26,6 +26,7 @@ button:disabled{opacity:.6;cursor:not-allowed;transform:translateY(0)}
 .meta{color:#6b7280;font-size:.8rem;margin-top:.5rem}
 .finding{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:.65rem .85rem;margin-top:.5rem;font-size:.87rem;line-height:1.5}
 .finding .tag{font-weight:600;margin-right:.4rem;color:#2563eb}
+.reasoning{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem .95rem;margin-top:.6rem;font-size:.87rem;color:#1e3a8a;line-height:1.5}
 .rewrite{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem .95rem;margin-top:.6rem;font-size:.87rem;color:#166534;font-family:'Courier New',monospace;word-break:break-word;line-height:1.5}
 </style>
 </head>
@@ -36,21 +37,29 @@ button:disabled{opacity:.6;cursor:not-allowed;transform:translateY(0)}
   <textarea id="prompt" placeholder="Type or paste a prompt to scan...">My API key is sk-abc123xyz456.</textarea>
   <div class="row">
     <select id="policy"><option value="strict">Strict</option><option value="moderate">Moderate</option><option value="permissive">Permissive</option></select>
+    <select id="context"><option value="chat">Chat Only</option><option value="agent">Agent With Tools</option></select>
     <button id="btn" onclick="scan()">Scan</button>
     <span id="time" class="meta"></span>
   </div>
 </div>
 <div class="card" id="result" style="display:none"><div id="out"></div></div>
 <script>
+function executionContext(){
+  const mode=document.getElementById('context').value;
+  if(mode==='agent') return {tool_capabilities:['shell','database','browser'],trust_level:'elevated'};
+  return {tool_capabilities:[],trust_level:'standard'};
+}
+
 async function scan(){
   const btn=document.getElementById('btn'),prompt=document.getElementById('prompt').value;
   if(!prompt.trim())return;
   btn.disabled=true;btn.textContent='Scanning…';
   try{
-    const r=await fetch('/v1/prescan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:prompt,policy_profile:document.getElementById('policy').value})});
+    const r=await fetch('/v1/prescan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:prompt,policy_profile:document.getElementById('policy').value,context:executionContext()})});
     const d=await r.json(),res=document.getElementById('result');res.style.display='block';
     let h='<span class="badge badge-'+d.risk_level+'">'+d.risk_level+'</span> <span class="meta">Score: '+d.risk_score+'/100</span>';
     if(d.findings)d.findings.forEach(f=>{h+='<div class="finding"><span class="tag">'+f.category+'</span> '+f.detail+' <span class="meta">('+f.severity+', '+Math.round(f.confidence*100)+'%)</span></div>'});
+    if(d.reasoning)h+='<div class="reasoning">'+d.reasoning+'</div>';
     if(d.safe_rewrite&&d.risk_level!=='SAFE')h+='<div class="rewrite">'+d.safe_rewrite+'</div>';
     h+='<div class="meta" style="margin-top:.5rem">'+d.event_id+' · '+d.processing_time_ms+'ms · '+d.policy_profile+' · sig:'+(d.decision_signature||'').slice(0,12)+'…</div>';
     document.getElementById('out').innerHTML=h;

@@ -46,13 +46,20 @@ type Redaction struct {
 	Label string `json:"label"`
 }
 
+// ExecutionContext describes the runtime environment the prompt can influence.
+type ExecutionContext struct {
+	ToolCapabilities []string `json:"tool_capabilities,omitempty"`
+	TrustLevel       string   `json:"trust_level,omitempty"`
+}
+
 // PrescanRequest is the JSON body sent to POST /v1/prescan.
 type PrescanRequest struct {
-	EventID       string `json:"event_id"`
-	TenantID      string `json:"tenant_id,omitempty"`
-	SessionID     string `json:"session_id,omitempty"`
-	Content       string `json:"content"`
-	PolicyProfile string `json:"policy_profile,omitempty"`
+	EventID       string            `json:"event_id"`
+	TenantID      string            `json:"tenant_id,omitempty"`
+	SessionID     string            `json:"session_id,omitempty"`
+	Content       string            `json:"content"`
+	PolicyProfile string            `json:"policy_profile,omitempty"`
+	Context       *ExecutionContext `json:"context,omitempty"`
 }
 
 // PrescanResponse is the JSON body returned from POST /v1/prescan.
@@ -68,6 +75,8 @@ type PrescanResponse struct {
 	Timestamp         string    `json:"timestamp"`
 	ProcessingTimeMs  int64     `json:"processing_time_ms"`
 	DecisionSignature string    `json:"decision_signature"`
+	Reasoning         string    `json:"reasoning,omitempty"`
+	DecisionFactors   []string  `json:"decision_factors,omitempty"`
 }
 
 // PolicyDecision is the intermediate result from the policy engine.
@@ -78,9 +87,23 @@ type PolicyDecision struct {
 	Confirmations []string
 }
 
+// SessionSignals captures recent behavior for a tenant/session pair.
+type SessionSignals struct {
+	Key                       string   `json:"key"`
+	RecentScans               int      `json:"recent_scans"`
+	RecentReviews             int      `json:"recent_reviews"`
+	RecentBlocks              int      `json:"recent_blocks"`
+	RecentCategories          []string `json:"recent_categories,omitempty"`
+	RepeatedInjectionAttempts bool     `json:"repeated_injection_attempts"`
+	RepeatedExfiltrationHints bool     `json:"repeated_exfiltration_hints"`
+	RecentAttackEscalation    bool     `json:"recent_attack_escalation"`
+}
+
 // AuditEntry is a single immutable record in the audit log.
 type AuditEntry struct {
 	EventID       string    `json:"event_id"`
+	TenantID      string    `json:"tenant_id,omitempty"`
+	SessionID     string    `json:"session_id,omitempty"`
 	Timestamp     string    `json:"timestamp"`
 	RiskLevel     RiskLevel `json:"risk_level"`
 	RiskScore     int       `json:"risk_score"`

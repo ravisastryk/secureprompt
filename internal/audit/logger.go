@@ -27,12 +27,13 @@ func NewLogger(secret string) *Logger {
 }
 
 // Log records a new audit entry and returns its HMAC signature.
-func (l *Logger) Log(eventID string, risk models.RiskLevel, score int, findingCount int, profile string) string {
+func (l *Logger) Log(eventID, tenantID, sessionID string, risk models.RiskLevel, score int, findingCount int, profile string) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	payload := fmt.Sprintf("%s|%s|%s|%d|%d|%s|%s",
-		eventID, time.Now().UTC().Format(time.RFC3339), risk, score, findingCount, profile, l.prevSignature)
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	payload := fmt.Sprintf("%s|%s|%s|%s|%s|%d|%d|%s|%s",
+		eventID, tenantID, sessionID, timestamp, risk, score, findingCount, profile, l.prevSignature)
 
 	mac := hmac.New(sha256.New, l.hmacSecret)
 	mac.Write([]byte(payload))
@@ -40,7 +41,9 @@ func (l *Logger) Log(eventID string, risk models.RiskLevel, score int, findingCo
 
 	entry := models.AuditEntry{
 		EventID:       eventID,
-		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		TenantID:      tenantID,
+		SessionID:     sessionID,
+		Timestamp:     timestamp,
 		RiskLevel:     risk,
 		RiskScore:     score,
 		FindingCount:  findingCount,

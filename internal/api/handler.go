@@ -15,6 +15,7 @@ import (
 	"github.com/ravisastryk/secureprompt/internal/models"
 	"github.com/ravisastryk/secureprompt/internal/policy"
 	"github.com/ravisastryk/secureprompt/internal/rewriter"
+	"github.com/ravisastryk/secureprompt/internal/session"
 	"github.com/ravisastryk/secureprompt/internal/util"
 )
 
@@ -24,6 +25,7 @@ type Server struct {
 	policy   *policy.Engine
 	rewriter *rewriter.Engine
 	audit    *audit.Logger
+	sessions *session.Store
 
 	mu    sync.RWMutex
 	stats Stats
@@ -42,6 +44,7 @@ func NewServer(hmacSecret string) *Server {
 		policy:   policy.NewEngine(),
 		rewriter: rewriter.NewEngine(),
 		audit:    audit.NewLogger(hmacSecret),
+		sessions: session.NewStore(),
 		stats:    Stats{ByDecision: map[string]int{"SAFE": 0, "REVIEW": 0, "BLOCK": 0}},
 	}
 }
@@ -89,14 +92,20 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 	if req.PolicyProfile == "" {
 		req.PolicyProfile = "strict"
 	}
+	if req.Context == nil {
+		req.Context = &models.ExecutionContext{}
+	}
 
 	start := time.Now()
+
+	// 0. Session memory snapshot
+	signals := s.sessions.Snapshot(req.TenantID, req.SessionID)
 
 	// 1. Detect
 	findings := s.detector.Scan(req.Content)
 
 	// 2. Policy decision
-	decision := s.policy.Evaluate(req.PolicyProfile, findings)
+	decision := s.policy.Evaluate(req.PolicyProfile, findings, req.Context, signals)
 
 	// 3. Rewrite (only for REVIEW/BLOCK with findings)
 	safeRewrite := ""
@@ -104,8 +113,9 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 		safeRewrite = s.rewriter.Rewrite(req.Content, findings)
 	}
 
-	// 4. Audit log
-	sig := s.audit.Log(req.EventID, decision.RiskLevel, decision.RiskScore, len(findings), req.PolicyProfile)
+	// 4. Update session memory and audit log
+	s.sessions.Record(req.TenantID, req.SessionID, decision.RiskLevel, findings)
+	sig := s.audit.Log(req.EventID, req.TenantID, req.SessionID, decision.RiskLevel, decision.RiskScore, len(findings), req.PolicyProfile)
 
 	// 5. Stats
 	s.mu.Lock()
@@ -138,6 +148,8 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 		Timestamp:         time.Now().UTC().Format(time.RFC3339),
 		ProcessingTimeMs:  elapsed.Milliseconds(),
 		DecisionSignature: sig,
+		Reasoning:         decision.Reasoning,
+		DecisionFactors:   decision.Confirmations,
 	}
 
 	log.Printf("[%s] %s | score=%d | findings=%d | %dms",
