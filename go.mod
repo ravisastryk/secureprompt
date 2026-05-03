@@ -1,3 +1,3 @@
 module github.com/ravisastryk/secureprompt
 
-go 1.22
+go 1.26
