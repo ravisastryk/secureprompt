@@ -91,6 +91,28 @@ type PrescanResponse struct {
 	Reasoning         string    `json:"reasoning,omitempty"`
 	DecisionFactors   []string  `json:"decision_factors,omitempty"`
 	CausalChain       []string  `json:"causal_chain,omitempty"`
+
+	// Semantic-layer fields (only present when the layer is enabled and
+	// actually ran; keys omit when zero).
+	SemanticScore      float64           `json:"semantic_score,omitempty"`
+	SemanticLatencyMs  float64           `json:"semantic_latency_ms,omitempty"`
+	SemanticModelsUsed []string          `json:"semantic_models_used,omitempty"`
+	SemanticFindings   []SemanticFinding `json:"semantic_findings,omitempty"`
+	SemanticSkipped    bool              `json:"semantic_skipped,omitempty"`
+	SemanticSkipReason string            `json:"semantic_skip_reason,omitempty"`
+	SemanticError      string            `json:"semantic_error,omitempty"`
+}
+
+// SemanticFinding is the API-shape of a single HuggingFace-derived detection.
+// It mirrors the internal/semantic Finding type so the api package does not
+// have to import the implementation.
+type SemanticFinding struct {
+	Type       string  `json:"type"`
+	Confidence float64 `json:"confidence"`
+	Model      string  `json:"model"`
+	Label      string  `json:"label"`
+	Evidence   string  `json:"evidence"`
+	ScanMode   string  `json:"scan_mode"`
 }
 
 // PolicyDecision is the intermediate result from the policy engine.

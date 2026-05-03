@@ -17,6 +17,7 @@ import (
 	"github.com/ravisastryk/secureprompt/internal/policy"
 	"github.com/ravisastryk/secureprompt/internal/rewriter"
 	"github.com/ravisastryk/secureprompt/internal/scanner"
+	"github.com/ravisastryk/secureprompt/internal/semantic"
 	"github.com/ravisastryk/secureprompt/internal/session"
 	"github.com/ravisastryk/secureprompt/internal/util"
 )
@@ -28,7 +29,7 @@ type Server struct {
 	rewriter *rewriter.Engine
 	audit    *audit.Logger
 	sessions *session.Store
-	scanner  *scanner.Scanner // v2 façade; reused for scan_mode=response
+	scanner  *scanner.Scanner // façade; reused for scan_mode=response
 
 	mu    sync.RWMutex
 	stats Stats
@@ -59,6 +60,13 @@ func NewServer(hmacSecret string) *Server {
 		scanner: scanner.NewWithDeps(det, pol, rw, aud, sess),
 		stats:   Stats{ByDecision: map[string]int{"SAFE": 0, "REVIEW": 0, "BLOCK": 0}},
 	}
+}
+
+// SetSemanticAnalyzer attaches the semantic-analysis layer to the underlying
+// scanner. Pass nil to disable. Safe to call once at startup before any
+// requests are served.
+func (s *Server) SetSemanticAnalyzer(a *semantic.Analyzer) {
+	s.scanner.SetSemanticAnalyzer(a)
 }
 
 // RegisterRoutes mounts all endpoints on the default mux.
@@ -176,6 +184,27 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 		Reasoning:         result.Reasoning,
 		DecisionFactors:   result.Factors,
 		CausalChain:       result.CausalChain,
+	}
+	if sem := result.Semantic; sem != nil {
+		resp.SemanticScore = sem.Score
+		resp.SemanticLatencyMs = sem.LatencyMs
+		resp.SemanticModelsUsed = sem.Models
+		resp.SemanticSkipped = sem.Skipped
+		resp.SemanticSkipReason = sem.SkipReason
+		resp.SemanticError = sem.Error
+		if len(sem.Findings) > 0 {
+			resp.SemanticFindings = make([]models.SemanticFinding, len(sem.Findings))
+			for i, f := range sem.Findings {
+				resp.SemanticFindings[i] = models.SemanticFinding{
+					Type:       f.Type,
+					Confidence: f.Confidence,
+					Model:      f.Model,
+					Label:      f.Label,
+					Evidence:   f.Evidence,
+					ScanMode:   f.ScanMode,
+				}
+			}
+		}
 	}
 
 	log.Printf("[%s] %s | mode=%s | score=%d | findings=%d | %dms",
