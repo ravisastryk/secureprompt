@@ -7,10 +7,10 @@ import (
 )
 
 type secretPattern struct {
-	pattern  *regexp.Regexp
-	label    string
-	detail   string
-	severity string
+	pattern    *regexp.Regexp
+	label      string
+	detail     string
+	severity   string
 	confidence float64
 }
 

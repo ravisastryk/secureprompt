@@ -1,3 +1,8 @@
+// Package session keeps a short in-memory record of recent scan activity
+// per tenant/session pair. The signals it surfaces (repeated injection
+// attempts, recent blocks, attack escalation) feed the policy engine's
+// adaptive scoring so that prompts which look benign in isolation can be
+// elevated based on session-level behavior.
 package session
 
 import (

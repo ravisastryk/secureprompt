@@ -31,7 +31,7 @@ var piiPatterns = []piiRule{
 	{regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`), "CREDIT_CARD_16", "16-digit card number detected", "critical"},
 
 	// Identity documents
-	{regexp.MustCompile(`(?i)\b(passport|license|licence)\s*(number|no|#|num)\.?\s*:?\s*[A-Z0-9]{6,12}\b`), "ID_DOCUMENT", "Identity document number detected", "high"},
+	{regexp.MustCompile(`(?i)\b(passport|licen[cs]e)\s*(number|no|#|num)\.?\s*:?\s*[A-Z0-9]{6,12}\b`), "ID_DOCUMENT", "Identity document number detected", "high"},
 	{regexp.MustCompile(`\b[A-Z]{2}\d{6}[A-Z]?\b`), "UK_NINO", "UK National Insurance Number detected", "critical"},
 
 	// Phone numbers (lower severity — PII but less sensitive)

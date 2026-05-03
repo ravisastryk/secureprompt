@@ -5,11 +5,11 @@ on:
     branches: [main]
   pull_request:
 
-# Single source of truth for the Go toolchain version. Bumping here updates
-# every job below; keep in sync with the `go` directive in go.mod.
+# Single source of truth for the toolchain versions. Bumping here updates
+# every job below; keep `GO_VERSION` in sync with the `go` directive in go.mod.
 env:
-  GO_VERSION: "1.26"
-  GOLANGCI_LINT_VERSION: "v2.6.0"
+  GO_VERSION: "1.26.2"
+  GOLANGCI_LINT_VERSION: "latest"
 
 permissions:
   contents: read
@@ -19,8 +19,8 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -37,8 +37,8 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -56,15 +56,26 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    env:
+      GO111MODULE: "on"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Setup Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+      - name: Checkout source
+        uses: actions/checkout@v6
+      - uses: actions/cache@v5
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        # v9 of the action installs golangci-lint v2 by default; using
+        # `latest` ensures we always pick up a version that supports the
+        # repo's targeted Go release.
+        uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
-          # Use the repo's .golangci.yml; fail the job on any reported issue.
           args: --timeout=5m

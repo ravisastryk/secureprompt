@@ -115,8 +115,8 @@ func TestApply_RemoteOverride_Success(t *testing.T) {
 	defer server.Close()
 
 	cfg := DefaultConfig()
-	cfg.Profile = "strict"              // Local config: strict
-	cfg.RemoteOverrideURL = server.URL  // Remote says: permissive
+	cfg.Profile = "strict"             // Local config: strict
+	cfg.RemoteOverrideURL = server.URL // Remote says: permissive
 	cfg.RemoteTimeout = 100 * time.Millisecond
 
 	wrapped := Apply(mockPromptFunc("Hello, world!", nil), cfg)

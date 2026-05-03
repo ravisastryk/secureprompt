@@ -21,21 +21,27 @@ linters:
     - revive        # drop-in golint replacement
     - bodyclose     # http response bodies must be closed
     - copyloopvar   # superfluous loop-var copies (Go 1.22+)
-    - goconst       # repeated string literals → const
     - gocritic      # opinionated style + bug checks
     - nakedret      # naked returns in long functions
     - prealloc      # slice preallocation hints
     - unconvert     # unnecessary type conversions
     - unparam       # unused function parameters
 
+  # Notes on intentionally disabled linters:
+  #   - goconst: severity / category labels ("high", "medium", "critical",
+  #     "SECRETS", …) are domain values that legitimately repeat. Promoting
+  #     them to constants is churn without benefit.
+
   settings:
     revive:
       rules:
         - name: var-naming
-        - name: exported
-          arguments: ["disableStutteringCheck"]
         - name: indent-error-flow
         - name: superfluous-else
+        # `exported` rule is intentionally NOT enabled. Trivial interface
+        # implementations (Name/Category/Detect across detectors) would
+        # require boilerplate doc comments without informational value;
+        # the interface itself is documented at its declaration.
         - name: unused-parameter
           disabled: true        # already covered by unparam, less noisy
     gosec:
@@ -48,21 +54,20 @@ linters:
     gocritic:
       disabled-checks:
         - ifElseChain         # too noisy on policy switch logic
-        - hugeParam           # opinionated, false positives on regex structs
-        - paramTypeCombine
     misspell:
       locale: US
 
   exclusions:
     rules:
-      # Test files: relax a few rules — table-driven tests are noisy under prealloc
-      # and sometimes intentionally use unhandled errors.
+      # Test files: relax a few rules — table-driven tests are noisy under
+      # prealloc, intentionally use unhandled errors, and often define helper
+      # signatures with parameters reserved for future cases.
       - path: _test\.go
         linters:
           - errcheck
           - gosec
-          - goconst
           - prealloc
+          - unparam
 
 issues:
   max-issues-per-linter: 0
