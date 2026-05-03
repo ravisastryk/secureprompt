@@ -1,0 +1,97 @@
+# SecurePrompt configuration.
+#
+# All settings can be overridden via environment variables:
+#   SP_PORT          → server.port
+#   SP_AUDIT_SECRET  → audit.secret           (also: HMAC_SECRET)
+#   HF_TOKEN         → semantic.hf_token
+#   SP_SEMANTIC      → semantic.enabled       ("true" / "false")
+#   SP_SEMANTIC_PROFILE → semantic.profile
+#   SP_SEMANTIC_TIMEOUT → semantic.timeout_ms
+#   SP_CONFIG        → path to this file (optional)
+
+server:
+  port: 8080
+
+audit:
+  enabled: true
+  # Change this in production. Set via SP_AUDIT_SECRET / HMAC_SECRET env var.
+  secret: "secureprompt-dev-secret"
+
+# ── Semantic Analysis (optional) ──────────────────────────────────────────────
+#
+# The semantic layer adds LLM-powered analysis on top of the rule-based
+# detection layer. It calls the HuggingFace Inference API directly from Go —
+# no Python, no sidecar, no additional processes.
+#
+# How it works:
+#   1. Rules layer runs first (always, <10ms).
+#   2. If the rules score falls in escalation_band, the semantic layer runs.
+#   3. Scores are fused (rules × 0.4 + semantic × 0.6 by default).
+#   4. If HF API is unreachable, SecurePrompt falls back to rules-only
+#      (fail_open: true).
+#
+# What you need:
+#   - Free HF account + token: https://huggingface.co/settings/tokens
+#   - Set HF_TOKEN env var (preferred) or hf_token below.
+#   - Apache-licensed models (protectai, piiranha) work without gating.
+#   - Llama-based models (Prompt-Guard-2) require accepting the license.
+
+semantic:
+  enabled: false                # set to true (or SP_SEMANTIC=true) to activate
+
+  # HuggingFace API token. Prefer HF_TOKEN env var over storing here.
+  # The token MUST have the "Make calls to Inference Providers" permission
+  # at https://huggingface.co/settings/tokens. Symptom of a missing scope
+  # is HTTP 403 from the HF router.
+  hf_token: ""
+
+  # HuggingFace endpoint base URL. Leave empty for the current default
+  # (Inference Providers router). Override only if HF moves the endpoint
+  # again or you proxy through a corporate gateway.
+  # api_base: "https://router.huggingface.co/hf-inference/models"
+
+  # Rules scores in this band trigger the semantic layer. Below low → ALLOW
+  # fast (skip semantic). Above high → BLOCK fast (already decisive).
+  escalation_band:
+    low:  0.1
+    high: 0.8
+
+  # Semantic layer's contribution to the final fused score (0.6 = 60%).
+  fusion_weight: 0.6
+
+  # Per-request HF API timeout. SecurePrompt never blocks longer than this.
+  timeout_ms: 400
+
+  # true  = semantic errors fall back to rules score (recommended)
+  # false = semantic errors return BLOCK (maximum safety)
+  fail_open: true
+
+  # Pre-defined model set. Ignored if `models:` is provided.
+  #   minimal   → Llama-Prompt-Guard-2-22M only (~60ms, gated by Meta)
+  #   balanced  → protectai injection + lakshyakh93 PII (~120ms) [DEFAULT]
+  #   thorough  → Llama-Prompt-Guard-2-22M + protectai + lakshyakh93 (~200ms)
+  profile: "balanced"
+
+  # Explicit model list. If provided, overrides profile. Each entry:
+  #   id:           HF model ID
+  #   task:         "text-classification" | "token-classification"
+  #   threshold:    minimum confidence to emit a finding (0.0–1.0)
+  #   input_only:   only run on scan_mode=input
+  #   response_only: only run on scan_mode=response
+  #   disabled:     skip this entry without removing it
+  #
+  # models:
+  #   - id: "protectai/deberta-v3-base-prompt-injection-v2"
+  #     task: "text-classification"
+  #     threshold: 0.7
+  #
+  #   - id: "lakshyakh93/deberta_finetuned_pii"
+  #     task: "token-classification"
+  #     threshold: 0.85
+  #     # response_only: true   # only scan LLM output (pii_echo pattern)
+  #
+  #   - id: "meta-llama/Llama-Prompt-Guard-2-22M"
+  #     task: "text-classification"
+  #     threshold: 0.70
+  #     # Requires HF token + acceptance of the Llama license at
+  #     # https://huggingface.co/meta-llama/Llama-Prompt-Guard-2-22M

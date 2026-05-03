@@ -30,6 +30,7 @@ import (
 	"github.com/ravisastryk/secureprompt/internal/models"
 	"github.com/ravisastryk/secureprompt/internal/policy"
 	"github.com/ravisastryk/secureprompt/internal/rewriter"
+	"github.com/ravisastryk/secureprompt/internal/semantic"
 	"github.com/ravisastryk/secureprompt/internal/session"
 )
 
@@ -42,6 +43,10 @@ type Scanner struct {
 	audit             *audit.Logger
 	sessions          *session.Store
 	responseDetectors []ResponseDetector
+	// semanticAnalyzer is the optional semantic-analysis layer. Nil
+	// disables it; callers inject one via SetSemanticAnalyzer at startup
+	// when config enables it.
+	semanticAnalyzer *semantic.Analyzer
 }
 
 // New builds a Scanner with the production set of detectors and a fresh
@@ -98,6 +103,14 @@ func NewWithDeps(d *detector.Engine, p *policy.Engine, rw *rewriter.Engine, a *a
 // endpoint when the Scanner is the canonical owner of audit state.
 func (s *Scanner) AuditEntries() []models.AuditEntry { return s.audit.Entries() }
 
+// SetSemanticAnalyzer attaches the semantic-analysis layer. Pass nil to
+// disable. Safe to call once at startup before any scans are dispatched.
+func (s *Scanner) SetSemanticAnalyzer(a *semantic.Analyzer) { s.semanticAnalyzer = a }
+
+// SemanticEnabled reports whether a non-nil, enabled semantic analyzer is
+// attached. Useful for /health probes and start-up logging.
+func (s *Scanner) SemanticEnabled() bool { return s.semanticAnalyzer.Enabled() }
+
 // ScanRequest is the input for both Scan and ScanResponse.
 type ScanRequest struct {
 	EventID       string
@@ -122,6 +135,11 @@ type ScanResult struct {
 	Reasoning     string
 	Factors       []string
 	CausalChain   []string
+
+	// Semantic carries the semantic-layer outcome. Nil when no analyzer is
+	// attached; non-nil with Skipped=true when the rules score was already
+	// decisive.
+	Semantic *semantic.Result
 }
 
 // Scan performs pre-send (input) scanning. Equivalent behavior to the original
@@ -139,6 +157,8 @@ func (s *Scanner) Scan(ctx context.Context, req ScanRequest) (*ScanResult, error
 	signals := s.sessions.Snapshot(req.TenantID, req.SessionID)
 	findings := s.detector.Scan(req.Content)
 	decision := s.policy.Evaluate(req.PolicyProfile, findings, req.Context, signals)
+
+	semResult := s.fuseSemantic(ctx, req.Content, "input", &decision)
 
 	safeRewrite := ""
 	if decision.RiskLevel != models.RiskSafe && len(findings) > 0 {
@@ -162,6 +182,7 @@ func (s *Scanner) Scan(ctx context.Context, req ScanRequest) (*ScanResult, error
 		Reasoning:     decision.Reasoning,
 		Factors:       decision.Confirmations,
 		CausalChain:   inputCausalChain(decision.RiskLevel),
+		Semantic:      semResult,
 	}, nil
 }
 
@@ -208,6 +229,12 @@ func (s *Scanner) ScanResponse(ctx context.Context, req ScanRequest) (*ScanResul
 		decision.Reasoning += " [response mode: high-confidence leak elevated to BLOCK]"
 	}
 
+	semResult := s.fuseSemantic(ctx, req.Content, "response", &decision)
+
+	// Token-classification semantic findings (PII spans) flow into the
+	// rewriter so safe_rewrite masks the same characters the model flagged.
+	all = mergeSemanticSpans(all, semResult)
+
 	safeRewrite := ""
 	if decision.RiskLevel != models.RiskSafe && len(all) > 0 {
 		safeRewrite = s.rewriter.Rewrite(req.Content, all)
@@ -230,7 +257,130 @@ func (s *Scanner) ScanResponse(ctx context.Context, req ScanRequest) (*ScanResul
 		Reasoning:     decision.Reasoning,
 		Factors:       decision.Confirmations,
 		CausalChain:   responseCausalChain(decision.RiskLevel),
+		Semantic:      semResult,
 	}, nil
+}
+
+// fuseSemantic invokes the optional semantic layer and updates the rule
+// engine's PolicyDecision in place when the fused score exceeds the original.
+//
+// Score scales:
+//   - PolicyDecision.RiskScore is an integer in [0, 100].
+//   - semantic.ScanWithFusion uses floats in [0.0, 1.0].
+//
+// Behavior:
+//   - Returns nil when no analyzer is attached (rules-only mode).
+//   - Returns a non-nil Result with Skipped=true when semantic is disabled,
+//     out of band, or every model failed under fail_open.
+//   - When semantic actually ran, the fused score replaces RiskScore (only
+//     when higher), reasoning is annotated, and RiskLevel is promoted only
+//     when the fused score crosses a stricter threshold than the rule layer
+//     already chose.
+func (s *Scanner) fuseSemantic(ctx context.Context, content, scanMode string, decision *models.PolicyDecision) *semantic.Result {
+	if !s.semanticAnalyzer.Enabled() {
+		return nil
+	}
+
+	rulesScore := float64(decision.RiskScore) / 100.0
+	fused, semResult := semantic.ScanWithFusion(ctx, s.semanticAnalyzer, rulesScore, semantic.ScanRequest{
+		Content:   content,
+		ScanMode:  scanMode,
+		StartTime: time.Now(),
+	})
+
+	// Skipped or no useful escalation: leave the decision untouched.
+	if semResult == nil || semResult.Skipped || fused <= rulesScore {
+		return semResult
+	}
+
+	newScore := int(fused * 100)
+	if newScore > decision.RiskScore {
+		decision.RiskScore = newScore
+	}
+
+	// Promote RiskLevel only when fusion crossed a stricter threshold.
+	// 0.30 → at least REVIEW (consistent with the strict block threshold
+	// in the spec); 0.80 → BLOCK once REVIEW already fires.
+	switch decision.RiskLevel {
+	case models.RiskSafe:
+		if fused >= 0.30 {
+			decision.RiskLevel = models.RiskReview
+			decision.Reasoning = appendReason(decision.Reasoning,
+				fmt.Sprintf("semantic layer raised score to %.2f → REVIEW", fused))
+		}
+	case models.RiskReview:
+		if fused >= 0.80 {
+			decision.RiskLevel = models.RiskBlock
+			decision.Reasoning = appendReason(decision.Reasoning,
+				fmt.Sprintf("semantic layer raised score to %.2f → BLOCK", fused))
+		}
+	}
+
+	if len(semResult.Findings) > 0 {
+		decision.Confirmations = append(decision.Confirmations,
+			fmt.Sprintf("semantic: %d HF finding(s) across %d model(s)",
+				len(semResult.Findings), len(semResult.Models)))
+	}
+	return semResult
+}
+
+func appendReason(existing, addition string) string {
+	if existing == "" {
+		return addition
+	}
+	return existing + " [" + addition + "]"
+}
+
+// mergeSemanticSpans converts token-classification semantic findings (which
+// carry character offsets) into models.Finding entries with a Location set,
+// so the rewriter masks the same span. Text-classification findings (no
+// span) are skipped — promotion happens via the fused score, not redaction.
+//
+// Conservative: only entries with a positive span and a recognized PII type
+// are merged; everything else is left to the score-fusion path.
+func mergeSemanticSpans(rules []models.Finding, sem *semantic.Result) []models.Finding {
+	if sem == nil || sem.Skipped || len(sem.Findings) == 0 {
+		return rules
+	}
+	merged := rules
+	for _, f := range sem.Findings {
+		if f.End <= f.Start {
+			continue
+		}
+		category, severity, ok := classifySemantic(f.Type)
+		if !ok {
+			continue
+		}
+		merged = append(merged, models.Finding{
+			Category:   category,
+			Type:       semanticRedactionLabel(f.Type),
+			Detail:     f.Evidence,
+			Confidence: f.Confidence,
+			Severity:   severity,
+			Location:   &models.Location{Start: f.Start, End: f.End},
+		})
+	}
+	return dedupe(merged)
+}
+
+// classifySemantic maps a semantic finding Type onto a rules-side
+// (category, severity) pair. Returns ok=false for types that should not
+// drive redaction (e.g. text-classification injection findings).
+func classifySemantic(semType string) (models.DetectionCategory, string, bool) {
+	switch {
+	case strings.HasPrefix(semType, "semantic_pii_"):
+		return models.CategoryPII, "high", true
+	default:
+		return "", "", false
+	}
+}
+
+// semanticRedactionLabel produces a short, uppercase label that ends up
+// inside the [REDACTED_X] tag the rewriter inserts. Drops the "semantic_"
+// prefix so output reads "[REDACTED_PII_SSN]" not "[REDACTED_SEMANTIC_PII_SSN]".
+func semanticRedactionLabel(semType string) string {
+	t := strings.TrimPrefix(semType, "semantic_")
+	return strings.ToUpper(t)
 }
 
 // DualLayerRequest bundles input + LLM-call closure + output scan into one

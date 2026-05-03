@@ -1,4 +1,4 @@
-.PHONY: build run test test-race cover clean fmt vet lint lint-ci tidy
+.PHONY: build run test test-race cover clean fmt vet lint lint-ci tidy quickstart semantic
 
 BINARY               = secureprompt
 CMD                  = ./cmd/secureprompt
@@ -55,21 +55,32 @@ clean:
 
 ## health: Check if the API is running
 health:
-	@curl -s http://localhost:8080/health | python3 -m json.tool
+	@curl -s http://localhost:8080/health | jq .
 
 ## scan: Quick interactive scan (usage: make scan PROMPT="your text")
 scan:
 	@curl -s http://localhost:8080/v1/prescan \
 		-H 'Content-Type: application/json' \
-		-d '{"content":"$(PROMPT)"}' | python3 -m json.tool
+		-d '{"content":"$(PROMPT)"}' | jq .
 
 ## stats: View scan statistics
 stats:
-	@curl -s http://localhost:8080/v1/stats | python3 -m json.tool
+	@curl -s http://localhost:8080/v1/stats | jq .
 
 ## audit: View the audit log
 audit:
-	@curl -s http://localhost:8080/v1/audit | python3 -m json.tool
+	@curl -s http://localhost:8080/v1/audit | jq .
+
+## quickstart: Build, run, and exercise representative prompts end-to-end
+##             (loads .env automatically; set SP_SEMANTIC=true + HF_TOKEN
+##             there to also exercise the semantic layer)
+quickstart:
+	bash scripts/quickstart.sh
+
+## semantic: End-to-end run with the semantic layer enabled. Reads HF_TOKEN
+##           and SP_SEMANTIC_* from .env (copy from .env.example first).
+semantic:
+	bash scripts/run_semantic.sh
 
 ## help: Show this help
 help:
