@@ -25,9 +25,21 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: go mod tidy (verify)
+        # `git diff --exit-code <path>` errors if <path> is not in the working
+        # tree. This repo has zero external dependencies so go.sum is an empty
+        # file by design — but we still want CI to fail if `go mod tidy` would
+        # change *anything* under VCS. `git status --porcelain` handles missing
+        # files gracefully and reports any post-tidy drift in either go.mod or
+        # go.sum.
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum out of date — run 'go mod tidy'" && exit 1)
+          drift=$(git status --porcelain -- go.mod go.sum)
+          if [ -n "$drift" ]; then
+            echo "go.mod/go.sum out of date — run 'go mod tidy'"
+            echo "$drift"
+            git --no-pager diff -- go.mod go.sum
+            exit 1
+          fi
       - name: go build
         run: go build ./...
       - name: go vet
@@ -47,7 +59,7 @@ jobs:
       - name: coverage summary
         run: go tool cover -func=coverage.out | tail -20
       - name: upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -68,7 +80,10 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          # Include go.mod in the key so the cache rebuilds when the toolchain
+          # version or any (eventual) dependency line changes — go.sum is
+          # currently empty since the project has zero external deps.
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
       - name: golangci-lint
