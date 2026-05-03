@@ -1,0 +1,83 @@
+# golangci-lint configuration — Go 1.26
+# Schema: v2 (golangci-lint >= v2.0)
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.26"
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - errcheck      # unchecked errors
+    - govet         # standard go vet checks
+    - ineffassign   # ineffectual assignments
+    - staticcheck   # staticcheck + stylecheck rules
+    - unused        # unused vars / consts / funcs / fields
+    - gosec         # security-focused checks
+    - misspell      # English misspellings in comments / strings
+    - revive        # drop-in golint replacement
+    - bodyclose     # http response bodies must be closed
+    - copyloopvar   # superfluous loop-var copies (Go 1.22+)
+    - gocritic      # opinionated style + bug checks
+    - nakedret      # naked returns in long functions
+    - prealloc      # slice preallocation hints
+    - unconvert     # unnecessary type conversions
+    - unparam       # unused function parameters
+
+  # Notes on intentionally disabled linters:
+  #   - goconst: severity / category labels ("high", "medium", "critical",
+  #     "SECRETS", …) are domain values that legitimately repeat. Promoting
+  #     them to constants is churn without benefit.
+
+  settings:
+    revive:
+      rules:
+        - name: var-naming
+        - name: indent-error-flow
+        - name: superfluous-else
+        # `exported` rule is intentionally NOT enabled. Trivial interface
+        # implementations (Name/Category/Detect across detectors) would
+        # require boilerplate doc comments without informational value;
+        # the interface itself is documented at its declaration.
+        - name: unused-parameter
+          disabled: true        # already covered by unparam, less noisy
+    gosec:
+      excludes:
+        - G104   # errors unhandled — covered by errcheck
+        - G115   # integer overflow conversion (too noisy on size_t use)
+    staticcheck:
+      checks:
+        - all
+    gocritic:
+      disabled-checks:
+        - ifElseChain         # too noisy on policy switch logic
+    misspell:
+      locale: US
+
+  exclusions:
+    rules:
+      # Test files: relax a few rules — table-driven tests are noisy under
+      # prealloc, intentionally use unhandled errors, and often define helper
+      # signatures with parameters reserved for future cases.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - prealloc
+          - unparam
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/ravisastryk/secureprompt

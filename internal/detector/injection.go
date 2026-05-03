@@ -9,8 +9,10 @@ import (
 // InjectionDetector scans for prompt injection, jailbreak, and role override attempts.
 type InjectionDetector struct{}
 
-func (d *InjectionDetector) Name() string                       { return "injection" }
-func (d *InjectionDetector) Category() models.DetectionCategory { return models.CategoryPromptInjection }
+func (d *InjectionDetector) Name() string { return "injection" }
+func (d *InjectionDetector) Category() models.DetectionCategory {
+	return models.CategoryPromptInjection
+}
 
 type injectionRule struct {
 	pattern    *regexp.Regexp

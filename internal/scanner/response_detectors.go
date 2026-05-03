@@ -6,15 +6,15 @@
 // the existing rewriter and audit log unchanged.
 //
 //   - pii_echo_v1        PII patterns relaxed for output (no "my SSN is" preamble);
-//                        the LLM is now the speaker, so any PII in the response is
-//                        a leak signal regardless of how the user phrased the input.
+//     the LLM is now the speaker, so any PII in the response is
+//     a leak signal regardless of how the user phrased the input.
 //   - secret_in_code_v1  Secrets specifically embedded inside ```code fences``` or
-//                        `inline code`. These are higher risk because users tend to
-//                        copy/paste code blocks straight into a terminal.
+//     `inline code`. These are higher risk because users tend to
+//     copy/paste code blocks straight into a terminal.
 //   - injection_relay_v1 The LLM repeats injection text it absorbed from RAG context
-//                        or tool output, e.g. "the document says: ignore all
-//                        previous instructions...". Catches indirect attacks the
-//                        input scan can't see (the malicious context arrived later).
+//     or tool output, e.g. "the document says: ignore all
+//     previous instructions...". Catches indirect attacks the
+//     input scan can't see (the malicious context arrived later).
 package scanner
 
 import (
@@ -112,7 +112,7 @@ func (d *SecretInCodeDetector) Detect(content string) []models.Finding {
 			// Distinct Type so dedupe does not collapse this into the
 			// standard SECRETS finding at the same offsets — the in-code
 			// variant carries higher severity and different remediation.
-			f.Type = f.Type + "_IN_CODE"
+			f.Type += "_IN_CODE"
 			f.Detail = "Secret embedded in code block: " + f.Detail
 			f.Severity = "critical"
 			findings = append(findings, f)
@@ -174,8 +174,10 @@ func overlapsAnyFence(start, end int, fences []codeSpan) bool {
 // arrived between input scan and output (e.g. via vector search).
 type InjectionRelayDetector struct{}
 
-func (d *InjectionRelayDetector) Name() string                       { return "injection_relay_v1" }
-func (d *InjectionRelayDetector) Category() models.DetectionCategory { return models.CategoryPromptInjection }
+func (d *InjectionRelayDetector) Name() string { return "injection_relay_v1" }
+func (d *InjectionRelayDetector) Category() models.DetectionCategory {
+	return models.CategoryPromptInjection
+}
 
 type injectionRelayRule struct {
 	pattern  *regexp.Regexp

@@ -191,7 +191,7 @@ func fetchRemotePolicy(url string, timeout time.Duration) string {
 	if err != nil {
 		return "" // Fail open: use local config
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return ""
@@ -268,7 +268,7 @@ func (f *DefaultRemoteFetcher) Fetch(ctx context.Context, url string) (string, e
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status: %d", resp.StatusCode)
@@ -287,9 +287,11 @@ func (f *DefaultRemoteFetcher) Fetch(ctx context.Context, url string) (string, e
 
 // ApplyWithFetcher is an advanced variant of Apply that accepts a custom
 // RemotePolicyFetcher for testing or custom integration scenarios.
+//
+// TODO: thread `fetcher` through to the inner Apply call. Today the fetcher
+// is accepted but not yet wired — the signature is reserved so the future
+// change is non-breaking.
 func ApplyWithFetcher(fn PromptFunc, cfg PolicyConfig, fetcher RemotePolicyFetcher) PromptFunc {
-	if fetcher == nil {
-		fetcher = &DefaultRemoteFetcher{Timeout: cfg.RemoteTimeout}
-	}
+	_ = fetcher // see TODO above
 	return Apply(fn, cfg)
 }

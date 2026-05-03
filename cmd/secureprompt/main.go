@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/ravisastryk/secureprompt/internal/api"
 )
@@ -24,7 +25,7 @@ func main() {
 
 	hmacSecret := os.Getenv("HMAC_SECRET")
 	if hmacSecret == "" {
-		hmacSecret = "secureprompt-dev-secret"
+		hmacSecret = "secureprompt-dev-secret" // #nosec G101 -- non-secret development fallback
 	}
 
 	srv := api.NewServer(hmacSecret)
@@ -45,5 +46,13 @@ func main() {
 	fmt.Println("║    GET  /v1/stats    -> View statistics                      ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }

@@ -4,8 +4,8 @@
 //   - Scan          — pre-flight (input) scanning of a user prompt
 //   - ScanResponse  — post-flight (output) scanning of an LLM response
 //   - DualLayerScan — convenience wrapper that runs Scan, calls the LLM via a
-//                     caller-supplied closure, then runs ScanResponse on the
-//                     result. Blocks at either layer surface as DualLayerResult.
+//     caller-supplied closure, then runs ScanResponse on the
+//     result. Blocks at either layer surface as DualLayerResult.
 //
 // Why a separate package?
 //
@@ -205,7 +205,7 @@ func (s *Scanner) ScanResponse(ctx context.Context, req ScanRequest) (*ScanResul
 	// extreme. This is the "data already assembled by the model" tax.
 	if decision.RiskLevel == models.RiskReview && decision.RiskScore >= 90 {
 		decision.RiskLevel = models.RiskBlock
-		decision.Reasoning = decision.Reasoning + " [response mode: high-confidence leak elevated to BLOCK]"
+		decision.Reasoning += " [response mode: high-confidence leak elevated to BLOCK]"
 	}
 
 	safeRewrite := ""
@@ -340,7 +340,7 @@ func (s *Scanner) DualLayerScan(ctx context.Context, req DualLayerRequest) (*Dua
 // sequentially; if benchmarks ever justify it, this is the obvious place to
 // add a goroutine pool similar to detector.Engine.Scan.
 func (s *Scanner) runResponseDetectors(content string) []models.Finding {
-	var out []models.Finding
+	out := make([]models.Finding, 0, len(s.responseDetectors))
 	for _, d := range s.responseDetectors {
 		out = append(out, d.Detect(content)...)
 	}
