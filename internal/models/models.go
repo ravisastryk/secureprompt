@@ -46,10 +46,22 @@ type Redaction struct {
 	Label string `json:"label"`
 }
 
+// ScanMode distinguishes between input (pre-send) and response (post-LLM) scanning.
+// Empty / "input" runs the standard pre-flight scan. "response" runs output scanning
+// with response-only detectors and output-calibrated risk weights.
+type ScanMode string
+
+const (
+	ScanModeInput    ScanMode = "input"
+	ScanModeResponse ScanMode = "response"
+)
+
 // ExecutionContext describes the runtime environment the prompt can influence.
+// ScanMode selects between pre-send (input) and post-LLM (response) scanning.
 type ExecutionContext struct {
 	ToolCapabilities []string `json:"tool_capabilities,omitempty"`
 	TrustLevel       string   `json:"trust_level,omitempty"`
+	ScanMode         ScanMode `json:"scan_mode,omitempty"`
 }
 
 // PrescanRequest is the JSON body sent to POST /v1/prescan.
@@ -68,6 +80,7 @@ type PrescanResponse struct {
 	TenantID          string    `json:"tenant_id,omitempty"`
 	SessionID         string    `json:"session_id,omitempty"`
 	PolicyProfile     string    `json:"policy_profile"`
+	ScanMode          ScanMode  `json:"scan_mode,omitempty"`
 	RiskLevel         RiskLevel `json:"risk_level"`
 	RiskScore         int       `json:"risk_score"`
 	Findings          []Finding `json:"findings"`
@@ -77,6 +90,7 @@ type PrescanResponse struct {
 	DecisionSignature string    `json:"decision_signature"`
 	Reasoning         string    `json:"reasoning,omitempty"`
 	DecisionFactors   []string  `json:"decision_factors,omitempty"`
+	CausalChain       []string  `json:"causal_chain,omitempty"`
 }
 
 // PolicyDecision is the intermediate result from the policy engine.

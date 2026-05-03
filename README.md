@@ -90,6 +90,58 @@ Access the interactive web UI at `http://localhost:8080` after starting the serv
 }
 ```
 
+### Output (Response) Scanning — Dual-Layer Security
+
+The same `/v1/prescan` endpoint also scans **LLM responses** before they are
+returned to a caller, persisted to a database, or rendered in a UI. Set
+`context.scan_mode = "response"`:
+
+```json
+{
+  "tenant_id": "acme",
+  "session_id": "sess-42",
+  "content": "Here is the customer profile: John Smith, SSN: 078-05-1120, Email: jsmith@company.com, AWS key: AKIAIOSFODNN7EXAMPLE",
+  "policy_profile": "strict",
+  "context": { "scan_mode": "response" }
+}
+```
+
+Response mode adds three output-only detectors on top of the standard six:
+
+| Detector             | Catches                                                                |
+|----------------------|-------------------------------------------------------------------------|
+| `pii_echo_v1`        | PII the LLM echoed back from RAG context (no "my SSN is" gate)         |
+| `secret_in_code_v1`  | Secrets inside ```` ``` ```` fences or `inline code` (ready-to-paste)  |
+| `injection_relay_v1` | Indirect injection the LLM relayed from retrieved context              |
+
+Risk weights are recalibrated for output (PII / secrets weigh more, malware
+weighs less — see [`docs/output-scanning.md`](docs/output-scanning.md)).
+For the in-process Go API the same flow is exposed as
+`scanner.Scanner.ScanResponse(ctx, req)` and a one-call helper
+`scanner.Scanner.DualLayerScan(ctx, req)` that runs input scan → LLM call →
+response scan and short-circuits at the layer where a block fires.
+
+```go
+import "github.com/ravisastryk/secureprompt/internal/scanner"
+
+s := scanner.New(hmacSecret)
+res, err := s.DualLayerScan(ctx, scanner.DualLayerRequest{
+    TenantID:      "acme",
+    SessionID:     sessionID,
+    Input:         userPrompt,
+    PolicyProfile: "strict",
+    Context:       agentCtx,
+    LLMCaller: func(prompt string) (string, error) {
+        return openaiClient.Complete(ctx, prompt)
+    },
+})
+if err != nil { return err }
+if res.Blocked {
+    return fmt.Errorf("blocked at %s: %s", res.BlockedAt, res.BlockReason)
+}
+return res.FinalOutput, nil // already scanned + redacted if needed
+```
+
 ## @Policy Directive: Declarative Prompt Governance
 
 SecurePrompt supports declarative policy governance via the `@Policy` directive pattern.
@@ -196,6 +248,17 @@ Audit logging can be disabled in high-throughput scenarios via `AuditEnabled: fa
 ## Zero Dependencies
 
 The entire project uses **only Go's standard library**. No external packages.
+
+## `crewgo` Prototype
+
+There is now an isolated prototype CLI for a Go-native `crewAI`-style scaffold with language plugins:
+
+```bash
+go run ./cmd/crewgo languages
+go run ./cmd/crewgo create --language go crew latest-ai-development
+```
+
+This does not replace SecurePrompt. It creates a separate generated project whose source-of-truth is `.crewgo/manifest.json`, with language-specific runtime files emitted by plugins.
 
 ## License
 

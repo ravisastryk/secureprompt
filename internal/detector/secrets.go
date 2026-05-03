@@ -91,3 +91,26 @@ func (d *SecretsDetector) Detect(content string) []models.Finding {
 func SecretPatterns() []secretPattern {
 	return secretPatterns
 }
+
+// ScanSecretsIn runs the secret patterns against an arbitrary substring (not
+// necessarily a full prompt). It returns one finding per matching rule with
+// Location offsets relative to the supplied content. Used by the response
+// scanner to detect secrets specifically embedded in code blocks.
+func ScanSecretsIn(content string) []models.Finding {
+	var findings []models.Finding
+	for _, sp := range secretPatterns {
+		locs := sp.pattern.FindStringIndex(content)
+		if locs == nil {
+			continue
+		}
+		findings = append(findings, models.Finding{
+			Category:   models.CategorySecrets,
+			Type:       sp.label,
+			Detail:     sp.detail,
+			Confidence: sp.confidence,
+			Severity:   sp.severity,
+			Location:   &models.Location{Start: locs[0], End: locs[1]},
+		})
+	}
+	return findings
+}
