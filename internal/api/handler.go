@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/ravisastryk/secureprompt/internal/models"
 	"github.com/ravisastryk/secureprompt/internal/policy"
 	"github.com/ravisastryk/secureprompt/internal/rewriter"
+	"github.com/ravisastryk/secureprompt/internal/scanner"
 	"github.com/ravisastryk/secureprompt/internal/session"
 	"github.com/ravisastryk/secureprompt/internal/util"
 )
@@ -26,6 +28,7 @@ type Server struct {
 	rewriter *rewriter.Engine
 	audit    *audit.Logger
 	sessions *session.Store
+	scanner  *scanner.Scanner // v2 façade; reused for scan_mode=response
 
 	mu    sync.RWMutex
 	stats Stats
@@ -39,13 +42,22 @@ type Stats struct {
 
 // NewServer creates a fully-wired API server.
 func NewServer(hmacSecret string) *Server {
+	det := detector.NewEngine()
+	pol := policy.NewEngine()
+	rw := rewriter.NewEngine()
+	aud := audit.NewLogger(hmacSecret)
+	sess := session.NewStore()
 	return &Server{
-		detector: detector.NewEngine(),
-		policy:   policy.NewEngine(),
-		rewriter: rewriter.NewEngine(),
-		audit:    audit.NewLogger(hmacSecret),
-		sessions: session.NewStore(),
-		stats:    Stats{ByDecision: map[string]int{"SAFE": 0, "REVIEW": 0, "BLOCK": 0}},
+		detector: det,
+		policy:   pol,
+		rewriter: rw,
+		audit:    aud,
+		sessions: sess,
+		// Scanner shares the same audit logger + session store so the audit
+		// chain stays unbroken regardless of whether a request hits the input
+		// or the response path.
+		scanner: scanner.NewWithDeps(det, pol, rw, aud, sess),
+		stats:   Stats{ByDecision: map[string]int{"SAFE": 0, "REVIEW": 0, "BLOCK": 0}},
 	}
 }
 
@@ -96,36 +108,48 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 		req.Context = &models.ExecutionContext{}
 	}
 
-	start := time.Now()
-
-	// 0. Session memory snapshot
-	signals := s.sessions.Snapshot(req.TenantID, req.SessionID)
-
-	// 1. Detect
-	findings := s.detector.Scan(req.Content)
-
-	// 2. Policy decision
-	decision := s.policy.Evaluate(req.PolicyProfile, findings, req.Context, signals)
-
-	// 3. Rewrite (only for REVIEW/BLOCK with findings)
-	safeRewrite := ""
-	if decision.RiskLevel != models.RiskSafe && len(findings) > 0 {
-		safeRewrite = s.rewriter.Rewrite(req.Content, findings)
+	// Dispatch on scan_mode. Default = input (pre-flight); "response" runs the
+	// v2 output scanner which adds PII-echo / secret-in-code / injection-relay
+	// detectors and applies output-calibrated risk weights.
+	mode := req.Context.ScanMode
+	if mode == "" {
+		mode = models.ScanModeInput
 	}
 
-	// 4. Update session memory and audit log
-	s.sessions.Record(req.TenantID, req.SessionID, decision.RiskLevel, findings)
-	sig := s.audit.Log(req.EventID, req.TenantID, req.SessionID, decision.RiskLevel, decision.RiskScore, len(findings), req.PolicyProfile)
+	start := time.Now()
+	var (
+		result *scanner.ScanResult
+		err    error
+	)
+	scanReq := scanner.ScanRequest{
+		EventID:       req.EventID,
+		TenantID:      req.TenantID,
+		SessionID:     req.SessionID,
+		Content:       req.Content,
+		PolicyProfile: req.PolicyProfile,
+		Context:       req.Context,
+	}
+	switch mode {
+	case models.ScanModeResponse:
+		result, err = s.scanner.ScanResponse(context.Background(), scanReq)
+	default:
+		result, err = s.scanner.Scan(context.Background(), scanReq)
+	}
+	if err != nil {
+		util.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 
-	// 5. Stats
+	// Stats
 	s.mu.Lock()
 	s.stats.TotalScans++
-	s.stats.ByDecision[string(decision.RiskLevel)]++
+	s.stats.ByDecision[string(result.RiskLevel)]++
 	s.mu.Unlock()
 
 	elapsed := time.Since(start)
 
-	// If no findings, return a single OK finding for clarity
+	findings := result.Findings
+	// If no findings, return a single OK finding for clarity (preserved from v1).
 	if len(findings) == 0 {
 		findings = []models.Finding{{
 			Category:   models.CategoryOK,
@@ -137,23 +161,25 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := models.PrescanResponse{
-		EventID:           req.EventID,
+		EventID:           result.EventID,
 		TenantID:          req.TenantID,
 		SessionID:         req.SessionID,
-		PolicyProfile:     req.PolicyProfile,
-		RiskLevel:         decision.RiskLevel,
-		RiskScore:         decision.RiskScore,
+		PolicyProfile:     result.PolicyProfile,
+		ScanMode:          result.ScanMode,
+		RiskLevel:         result.RiskLevel,
+		RiskScore:         result.RiskScore,
 		Findings:          findings,
-		SafeRewrite:       safeRewrite,
+		SafeRewrite:       result.SafeRewrite,
 		Timestamp:         time.Now().UTC().Format(time.RFC3339),
 		ProcessingTimeMs:  elapsed.Milliseconds(),
-		DecisionSignature: sig,
-		Reasoning:         decision.Reasoning,
-		DecisionFactors:   decision.Confirmations,
+		DecisionSignature: result.Signature,
+		Reasoning:         result.Reasoning,
+		DecisionFactors:   result.Factors,
+		CausalChain:       result.CausalChain,
 	}
 
-	log.Printf("[%s] %s | score=%d | findings=%d | %dms",
-		resp.RiskLevel, req.EventID, resp.RiskScore, len(findings), elapsed.Milliseconds())
+	log.Printf("[%s] %s | mode=%s | score=%d | findings=%d | %dms",
+		resp.RiskLevel, result.EventID, resp.ScanMode, resp.RiskScore, len(findings), elapsed.Milliseconds())
 
 	util.WriteJSON(w, http.StatusOK, resp)
 }
