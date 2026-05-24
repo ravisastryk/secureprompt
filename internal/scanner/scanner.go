@@ -140,6 +140,10 @@ type ScanResult struct {
 	// attached; non-nil with Skipped=true when the rules score was already
 	// decisive.
 	Semantic *semantic.Result
+
+	// DocScan summarizes the pre-flight document scan. Non-nil only when
+	// ScanWithDocument ran with an attached document.
+	DocScan *models.DocScanSummary
 }
 
 // Scan performs pre-send (input) scanning. Equivalent behavior to the original

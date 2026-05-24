@@ -72,6 +72,20 @@ type PrescanRequest struct {
 	Content       string            `json:"content"`
 	PolicyProfile string            `json:"policy_profile,omitempty"`
 	Context       *ExecutionContext `json:"context,omitempty"`
+
+	// Document, when present, triggers pre-flight document scanning: the
+	// document is scanned and (if not blocked) its sanitized text is
+	// appended to Content before the standard scan runs.
+	Document *DocumentInput `json:"document,omitempty"`
+}
+
+// DocumentInput carries an attached document for pre-flight scanning.
+// Data is base64-encoded in the JSON payload and decoded to raw bytes by
+// encoding/json automatically.
+type DocumentInput struct {
+	Data          []byte `json:"data"`
+	Filename      string `json:"filename,omitempty"`
+	StripMetadata bool   `json:"strip_metadata,omitempty"`
 }
 
 // PrescanResponse is the JSON body returned from POST /v1/prescan.
@@ -101,6 +115,20 @@ type PrescanResponse struct {
 	SemanticSkipped    bool              `json:"semantic_skipped,omitempty"`
 	SemanticSkipReason string            `json:"semantic_skip_reason,omitempty"`
 	SemanticError      string            `json:"semantic_error,omitempty"`
+
+	// DocScan summarizes the pre-flight document scan (present only when a
+	// document was attached to the request).
+	DocScan *DocScanSummary `json:"doc_scan,omitempty"`
+}
+
+// DocScanSummary is attached to PrescanResponse when a document was scanned.
+type DocScanSummary struct {
+	DocType        string  `json:"doc_type"`
+	Decision       string  `json:"doc_decision"`
+	RiskScore      float64 `json:"doc_risk_score"`
+	FindingsCount  int     `json:"doc_findings_count"`
+	LatencyMs      float64 `json:"doc_latency_ms"`
+	MetadataFields int     `json:"doc_metadata_fields_scanned"`
 }
 
 // SemanticFinding is the API-shape of a single HuggingFace-derived detection.

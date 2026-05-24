@@ -137,8 +137,15 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 		PolicyProfile: req.PolicyProfile,
 		Context:       req.Context,
 	}
-	switch mode {
-	case models.ScanModeResponse:
+	switch {
+	case req.Document != nil && len(req.Document.Data) > 0:
+		// Pre-flight document scanning (input mode only).
+		result, err = s.scanner.ScanWithDocument(context.Background(), scanReq, scanner.DocumentAttachment{
+			Data:          req.Document.Data,
+			Filename:      req.Document.Filename,
+			StripMetadata: req.Document.StripMetadata,
+		})
+	case mode == models.ScanModeResponse:
 		result, err = s.scanner.ScanResponse(context.Background(), scanReq)
 	default:
 		result, err = s.scanner.Scan(context.Background(), scanReq)
@@ -206,6 +213,7 @@ func (s *Server) handlePrescan(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	resp.DocScan = result.DocScan
 
 	log.Printf("[%s] %s | mode=%s | score=%d | findings=%d | %dms",
 		resp.RiskLevel, result.EventID, resp.ScanMode, resp.RiskScore, len(findings), elapsed.Milliseconds())
