@@ -381,6 +381,8 @@ Policy precedence: per-request context override (`directive.WithPolicyProfile(ct
 
 The detection engine, HTTP server, and HuggingFace API client all use Go's standard library. The single external dependency is `gopkg.in/yaml.v3` for parsing `configs/secureprompt.yaml`.
 
+**[→ FAQ](docs/FAQ.md)** — common questions on deployment, detection, integrations, and limitations
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
